@@ -4,6 +4,7 @@ from database import engine
 from models import Base
 from database import SessionLocal
 from models import ExpenseDB
+from fastapi.middleware.cors import CORSMiddleware
 
 
 class Expense(BaseModel):
@@ -14,6 +15,14 @@ class Expense(BaseModel):
 
 app=FastAPI()
 Base.metadata.create_all(bind=engine)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")

@@ -1,0 +1,354 @@
+#root {
+  min-height: 100vh;
+}
+
+.page-shell {
+  width: 100%;
+  padding: 48px 20px;
+}
+
+.app-card {
+  width: min(900px, 100%);
+  margin: 0 auto;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #0f9f7f;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 8px;
+  font-size: clamp(2.5rem, 7vw, 4.25rem);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+
+.subtitle {
+  margin-bottom: 0;
+  color: #667085;
+  font-size: 1.05rem;
+}
+
+.total-card {
+  min-width: 170px;
+  padding: 18px 20px;
+  border: 1px solid #dce3e0;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(25, 55, 48, 0.06);
+}
+
+.total-card span {
+  display: block;
+  margin-bottom: 5px;
+  color: #667085;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.total-card strong {
+  font-size: 1.5rem;
+}
+
+.form-section,
+.expenses-section {
+  padding: 26px;
+  border: 1px solid #dce3e0;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 12px 36px rgba(25, 55, 48, 0.06);
+}
+
+.form-section {
+  margin-bottom: 20px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.section-heading h2 {
+  margin-bottom: 0;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+.expense-form {
+  display: grid;
+  grid-template-columns: 1.4fr 0.75fr 1fr auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.expense-form label {
+  color: #344054;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.expense-form input {
+  width: 100%;
+  margin-top: 7px;
+  padding: 12px 13px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #18201e;
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.expense-form input:focus {
+  border-color: #14a889;
+  box-shadow: 0 0 0 4px rgba(20, 168, 137, 0.12);
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary-button {
+  min-height: 43px;
+  padding: 0 20px;
+  background: #14a889;
+  color: #ffffff;
+  white-space: nowrap;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #0d8d72;
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.text-button {
+  padding: 5px;
+  background: transparent;
+  color: #667085;
+}
+
+.text-button:hover {
+  color: #18201e;
+}
+
+.error-message {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fff1f2;
+  color: #b42318;
+  font-size: 0.9rem;
+}
+
+.expense-count {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #edf8f5;
+  color: #0d7f68;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.expense-list {
+  display: grid;
+  gap: 2px;
+}
+
+.expense-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 8px;
+  border-bottom: 1px solid #edf0ef;
+}
+
+.expense-item:last-child {
+  border-bottom: 0;
+}
+
+.expense-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: #e6f7f2;
+  color: #0d8d72;
+  font-weight: 800;
+}
+
+.expense-details {
+  min-width: 0;
+}
+
+.expense-details h3 {
+  overflow: hidden;
+  margin-bottom: 4px;
+  font-size: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expense-details p {
+  margin-bottom: 0;
+  color: #667085;
+  font-size: 0.86rem;
+}
+
+.expense-amount {
+  font-size: 1.02rem;
+  white-space: nowrap;
+}
+
+.expense-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.expense-actions button {
+  padding: 8px 10px;
+  background: #f2f4f3;
+  color: #344054;
+  font-size: 0.82rem;
+}
+
+.expense-actions button:hover {
+  background: #e6eae8;
+}
+
+.expense-actions .delete-button {
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.expense-actions .delete-button:hover {
+  background: #ffe4e6;
+}
+
+.status-message,
+.empty-state {
+  color: #667085;
+  text-align: center;
+}
+
+.status-message {
+  margin: 30px 0;
+}
+
+.empty-state {
+  padding: 36px 20px 24px;
+}
+
+.empty-state span {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 14px;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf8f5;
+  color: #0d8d72;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.empty-state h3 {
+  margin-bottom: 6px;
+  color: #344054;
+}
+
+.empty-state p {
+  margin-bottom: 0;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 760px) {
+  .expense-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .expense-form label:first-child,
+  .primary-button {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .page-shell {
+    padding: 28px 14px;
+  }
+
+  .app-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .total-card {
+    min-width: 0;
+  }
+
+  .form-section,
+  .expenses-section {
+    padding: 20px 16px;
+    border-radius: 16px;
+  }
+
+  .expense-form {
+    grid-template-columns: 1fr;
+  }
+
+  .expense-form label:first-child,
+  .primary-button {
+    grid-column: auto;
+  }
+
+  .expense-item {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .expense-amount {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .expense-actions {
+    grid-column: 2 / -1;
+  }
+}
