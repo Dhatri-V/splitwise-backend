@@ -5,6 +5,7 @@ from models import Base
 from database import SessionLocal
 from models import ExpenseDB
 from fastapi.middleware.cors import CORSMiddleware
+import observability
 
 
 class Expense(BaseModel):
@@ -15,6 +16,8 @@ class Expense(BaseModel):
 
 app=FastAPI()
 Base.metadata.create_all(bind=engine)
+# Structured JSON-lines logs for CloudRCA cross-layer RCA (no bodies, SQL parameters, or personal data).
+observability.install(app, engine)
 
 app.add_middleware(
     CORSMiddleware,
