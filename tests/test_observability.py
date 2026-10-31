@@ -34,6 +34,7 @@ def client() -> TestClient:
 
 
 def lines() -> list:
+    observability.flush()
     return [json.loads(line) for line in LOG.read_text().splitlines()] if LOG.exists() else []
 
 
@@ -91,7 +92,7 @@ def test_application_500_logs_a_sanitized_application_error(client: TestClient) 
         "application", "AttributeError", "/expenses/{expense_id}", 500,
     )
     assert "database_id" not in error and "operation" not in error
-    assert error["message"] == "'?' object has no attribute '?'"
+    assert error["message"] == "'NoneType' object has no attribute 'title'"  # allowlisted shape; 'title' is a field name
     assert "99887766" not in LOG.read_text() and PRIVATE["title"] not in LOG.read_text()
 
 
@@ -163,20 +164,26 @@ def test_heartbeat_thread_writes_periodically_and_stops() -> None:
     assert count >= 2 and len(events("heartbeat")) == count
 
 
-def test_sanitizer_removes_sql_parameters_quoted_values_and_numbers() -> None:
+def test_sanitizer_logs_only_allowlisted_message_shapes() -> None:
     wrapped = OperationalError("INSERT INTO expenses (title) VALUES (?)", ("SYNTHETIC-PRIVATE-TITLE-7781",), sqlite3.OperationalError("database is locked"))
     assert observability.sanitize_message(wrapped) == "database is locked"
-    leaky = ValueError("invalid amount 4321.98 for 'SYNTHETIC-PRIVATE-NAME-QZ' [SQL: SELECT 1]")
-    assert observability.sanitize_message(leaky) == "invalid amount # for '?'"
+    schema = OperationalError("SELECT 1", (), sqlite3.OperationalError("no such table: expenses"))
+    assert observability.sanitize_message(schema) == "no such table: expenses"
+    syntax = OperationalError("x", (), sqlite3.OperationalError('near "Jane": syntax error'))
+    assert observability.sanitize_message(syntax) == "OperationalError (message withheld)"
+    assert observability.sanitize_message(RuntimeError("Cannot process Jane-Doe")) == "RuntimeError (message withheld)"
+    assert observability.sanitize_message(ValueError("invalid amount 4321.98 for SYNTHETIC-PRIVATE-NAME-QZ")) == "ValueError (message withheld)"
+    assert observability.sanitize_message(AttributeError("'NoneType' object has no attribute 'Jane Doe'")) == "AttributeError (message withheld)"
     assert observability.operation_of("SELECT expenses.id FROM expenses WHERE expenses.id = ?") == "SELECT expenses"
     assert observability.operation_of("UPDATE expenses SET title=? WHERE id=?") == "UPDATE expenses"
 
 
-def test_unsafe_request_id_headers_are_replaced(client: TestClient) -> None:
-    client.get("/expenses", headers={"X-Request-ID": "trace-ok_1.2"})
+def test_client_request_id_headers_are_never_stored(client: TestClient) -> None:
+    client.get("/expenses", headers={"X-Request-ID": "Jane-Doe"})
     client.get("/expenses", headers={"X-Request-ID": "Bearer secret-token value"})
-    first, second = (line["request_id"] for line in events("request"))
-    assert first == "trace-ok_1.2" and "secret" not in second and len(second) == 32
+    ids = [line["request_id"] for line in events("request")]
+    assert all(len(value) == 32 and int(value, 16) >= 0 for value in ids)
+    assert "Jane" not in LOG.read_text() and "secret" not in LOG.read_text()
 
 
 def test_logging_failures_never_break_requests(client: TestClient, tmp_path: Path) -> None:
@@ -188,6 +195,7 @@ def test_logging_failures_never_break_requests(client: TestClient, tmp_path: Pat
         observability.JsonLineSink.write = original  # type: ignore[assignment]
     unwritable = observability.JsonLineSink(str(tmp_path))  # a directory, not a file
     unwritable.write({"event": "request"})  # swallowed, no exception
+    assert unwritable.flush()
 
 
 def test_every_line_matches_the_cloudrca_converter_contract(client: TestClient) -> None:
@@ -235,3 +243,20 @@ def test_instance_id_fallback_hashes_the_hostname(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(observability.socket, "gethostname", lambda: "Jane-Doe-MacBook.local")
     value = observability.resolve_instance_id()
     assert value.startswith("host-") and len(value) == 17 and "Jane" not in value
+
+
+def test_slow_filesystem_never_blocks_callers_and_overflow_is_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    real_open = Path.open
+
+    def slow_open(self: Path, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        time.sleep(0.2)  # a stalled log filesystem
+        return real_open(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "open", slow_open)
+    sink = observability.JsonLineSink(str(tmp_path / "slow.jsonl"), queue_limit=3)
+    started = time.perf_counter()
+    for _ in range(10):
+        sink.write({"event": "request"})
+    assert time.perf_counter() - started < 0.1  # callers (the request path) never wait on the filesystem
+    assert sink.dropped >= 6  # queue of 3 plus at most one record in the writer
+    assert sink.flush(timeout=3)

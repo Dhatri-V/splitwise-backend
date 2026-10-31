@@ -15,10 +15,12 @@ Standard library only.
 
 from __future__ import annotations
 
+import atexit
 import contextvars
 import hashlib
 import json
 import os
+import queue
 import re
 import shutil
 import socket
@@ -28,7 +30,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.request import Request, urlopen
 
 from sqlalchemy import event
@@ -38,11 +40,33 @@ from sqlalchemy.exc import DBAPIError
 SERVICE = os.environ.get("SPLITWISE_SERVICE_NAME", "splitwise-api")
 DATABASE_ID = os.environ.get("SPLITWISE_DATABASE_ID", "splitwise-sqlite")
 WRITE_VERBS = ("INSERT", "UPDATE", "DELETE", "REPLACE")
-_SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _OPERATION = re.compile(r"^\s*(INSERT\s+INTO|REPLACE\s+INTO|UPDATE|DELETE\s+FROM|SELECT\b.*?\bFROM)\s+[\"`\[]?(\w+)", re.I | re.S)
-_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
-_NUMBER = re.compile(r"\b\d+(?:\.\d+)?\b")
-MAX_MESSAGE = 300
+_IDENTIFIER = r"[A-Za-z_][A-Za-z0-9_.]{0,63}"
+# Only these message shapes are ever logged; captured parts are code/schema identifiers, never user data.
+_SAFE_DATABASE_MESSAGES = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"database is locked",
+        r"database table is locked",
+        r"disk I/O error",
+        r"database or disk is full",
+        r"unable to open database file",
+        r"attempt to write a readonly database",
+        r"database disk image is malformed",
+        rf"no such table: {_IDENTIFIER}",
+        rf"no such column: {_IDENTIFIER}",
+        rf"(?:UNIQUE|NOT NULL|CHECK|FOREIGN KEY) constraint failed(?:: {_IDENTIFIER}(?:, {_IDENTIFIER})*)?",
+    )
+)
+_SAFE_APPLICATION_MESSAGES = tuple(
+    re.compile(pattern)
+    for pattern in (
+        rf"'NoneType' object has no attribute '{_IDENTIFIER}'",
+        rf"Class '{_IDENTIFIER}' is not mapped",
+        r"QueuePool limit of size \d+ overflow \d+ reached, connection timed out, timeout \d+(?:\.\d+)?",
+    )
+)
+QUEUE_LIMIT = 10_000
 
 
 def utc_now() -> str:
@@ -50,11 +74,17 @@ def utc_now() -> str:
 
 
 def sanitize_message(exc: BaseException) -> str:
-    """Exception text without SQL, parameters, quoted values, or numbers (IDs, amounts)."""
-    text = str(exc.orig) if isinstance(exc, DBAPIError) and exc.orig is not None else str(exc)
-    text = text.split("[SQL:")[0].split("[parameters:")[0]
-    text = _NUMBER.sub("#", _QUOTED.sub("'?'", text))
-    return " ".join(text.split())[:MAX_MESSAGE] or type(exc).__name__
+    """An allowlisted message shape, or '<ErrorClass> (message withheld)'.
+
+    Filtering arbitrary exception text cannot remove an unquoted name or title, so unknown messages are never logged.
+    """
+    database_error = isinstance(exc, DBAPIError)
+    text = str(exc.orig) if database_error and exc.orig is not None else str(exc)
+    text = " ".join(text.split("[SQL:")[0].split())
+    for pattern in _SAFE_DATABASE_MESSAGES if database_error else _SAFE_APPLICATION_MESSAGES:
+        if pattern.fullmatch(text):
+            return text
+    return f"{type(exc).__name__} (message withheld)"
 
 
 def error_class(exc: BaseException) -> str:
@@ -69,22 +99,56 @@ def operation_of(statement: str) -> Optional[str]:
 
 
 class JsonLineSink:
-    """Append one JSON object per line; any failure is swallowed so logging cannot break the app."""
+    """Queue JSON lines for a background writer; requests never wait on the filesystem.
 
-    def __init__(self, path: Optional[str] = None) -> None:
+    When the queue is full, records are dropped and counted rather than blocking. Failures are swallowed.
+    """
+
+    _instances: "List[JsonLineSink]" = []
+
+    def __init__(self, path: Optional[str] = None, queue_limit: int = QUEUE_LIMIT) -> None:
         self.path = path if path is not None else os.environ.get("SPLITWISE_LOG_FILE", "logs/app.jsonl")
-        self._lock = threading.Lock()
+        self.dropped = 0
+        self._queue: "queue.Queue[str]" = queue.Queue(maxsize=queue_limit)
+        self._writer = threading.Thread(target=self._drain, name="cloudrca-log-writer", daemon=True)
+        self._writer.start()
+        JsonLineSink._instances.append(self)
 
     def write(self, record: Dict[str, Any]) -> None:
         try:
-            line = json.dumps(record, sort_keys=True, separators=(",", ":"))
-            with self._lock:
+            self._queue.put_nowait(json.dumps(record, sort_keys=True, separators=(",", ":")))
+        except queue.Full:
+            self.dropped += 1
+        except Exception:  # noqa: BLE001 - logging must never raise into request handling
+            pass
+
+    def flush(self, timeout: float = 5.0) -> bool:
+        """Wait (up to ``timeout``) until queued lines are written; used at shutdown and in tests."""
+        deadline = time.monotonic() + timeout
+        while self._queue.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.005)
+        return not self._queue.unfinished_tasks
+
+    def _drain(self) -> None:
+        while True:
+            line = self._queue.get()
+            try:
                 target = Path(self.path)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with target.open("a", encoding="utf-8") as handle:
                     handle.write(line + "\n")
-        except Exception:  # noqa: BLE001 - logging must never raise into request handling
-            pass
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                self._queue.task_done()
+
+
+def flush(timeout: float = 5.0) -> None:
+    for sink in list(JsonLineSink._instances):
+        sink.flush(timeout)
+
+
+atexit.register(flush)
 
 
 def resolve_instance_id() -> str:
@@ -163,8 +227,8 @@ class Observability:
 
     # -- requests -------------------------------------------------------------------------------------------
     async def middleware(self, request: Any, call_next: Callable[[Any], Any]) -> Any:
-        incoming = request.headers.get("x-request-id", "")
-        state = _RequestState(request_id=incoming if _SAFE_REQUEST_ID.match(incoming) else uuid.uuid4().hex)
+        # Always an opaque generated ID: client-supplied X-Request-ID values could carry names, so they are never stored.
+        state = _RequestState(request_id=uuid.uuid4().hex)
         token = _STATE.set(state)
         with self._in_flight_lock:
             self._in_flight += 1

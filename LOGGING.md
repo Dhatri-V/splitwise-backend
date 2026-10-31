@@ -6,7 +6,7 @@
 - `error`: one per unhandled exception, with `reported_by` (`database` when raised by the SQLite driver, otherwise `application`), `error_class`, a sanitized `message`, and for database errors `database_id`, `operation` (verb + table, e.g. `INSERT expenses`), and `db_wait_ms`.
 - `heartbeat`: every 60 s, load average, CPU count, available/total memory (Linux), free/total disk for the database volume, and connection-pool size, checked-out, and overflow counts.
 
-Never logged: request bodies, query strings, raw paths, headers, SQL text or parameters, expense titles, amounts, names, credentials, or tokens. Exception messages have SQL, quoted values, and numbers removed. Logging errors are swallowed and never affect responses.
+Never logged: request bodies, query strings, raw paths, headers (including client `X-Request-ID`; every request gets an opaque generated ID), SQL text or parameters, expense titles, amounts, names, credentials, or tokens. Exception messages are logged only when they match an allowlisted shape (for example `database is locked` or `'NoneType' object has no attribute '<field>'`); anything else is recorded as `<ErrorClass> (message withheld)`. Records are queued and written by a background thread, so a slow log filesystem never delays requests; if the queue is full, records are dropped and counted. Logging errors are swallowed and never affect responses.
 
 | Setting | Default |
 | --- | --- |
