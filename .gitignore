@@ -3,3 +3,5 @@ __pycache__/
 .env
 .DS_Storesplitwise.db
 splitwise.db
+logs/
+.pytest_cache/
